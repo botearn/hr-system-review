@@ -237,17 +237,22 @@ export default function MySubmissions() {
         {/* 空状态 */}
         {!loading && !sub && (
           <div style={{ background: "#16161e", border: "1px dashed #2a2a33", borderRadius: 16, padding: "52px 32px", textAlign: "center" }}>
-            <div style={{ fontSize: 40, marginBottom: 16 }}>🚀</div>
-            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>还没有提交记录</div>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>{running || expired ? "⏳" : "🚀"}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
+              {running || expired ? "题目进行中" : "还没有提交记录"}
+            </div>
             <div style={{ fontSize: 14, color: "#6b6b78", marginBottom: 28, lineHeight: 1.7 }}>
-              选一道你最能发挥的题，3 小时内完成并提交。<br />
-              我们会综合作品质量与 AI 使用记录进行评估。
+              {running || expired ? (
+                <>完成作品后，回到题目页提交你的 GitHub 仓库链接。<br />我们会综合作品质量与 AI 使用记录进行评估。</>
+              ) : (
+                <>选一道你最能发挥的题，3 小时内完成并提交。<br />我们会综合作品质量与 AI 使用记录进行评估。</>
+              )}
             </div>
             <button
               onClick={() => navigate("/interview")}
               style={{ background: "#7b52d3", color: "#fff", border: "none", borderRadius: 10, padding: "13px 36px", fontSize: 14, fontWeight: 600, cursor: "pointer", letterSpacing: "0.2px" }}
             >
-              去选题
+              {running || expired ? "去提交" : "去选题"}
             </button>
           </div>
         )}
