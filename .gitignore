@@ -34,3 +34,4 @@ uploads/
 
 # Local-only generated resume samples for manual QA
 sample_resumes/
+.vercel
