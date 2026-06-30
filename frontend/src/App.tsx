@@ -8,6 +8,7 @@ import MySubmissions from "./pages/interview/MySubmissions";
 import AiPanel from "./components/AiPanel";
 import { useAuthStore } from "./store/auth";
 import { useChatStore, bindChatStoreToUser } from "./store/chat";
+import { useSubmissionNotifier } from "./hooks/useSubmissionNotifier";
 import { lazy, Suspense, useEffect } from "react";
 
 // Route-level code splitting: each page becomes its own chunk so the
@@ -88,6 +89,9 @@ function ProtectedLayout() {
   useEffect(() => {
     if (user?.id != null) bindChatStoreToUser(user.id);
   }, [user?.id]);
+
+  // 面试提交实时通知（HR 用户专属，30s 轮询）
+  useSubmissionNotifier();
 
   if (!accessToken) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;

@@ -3,6 +3,7 @@ import hashlib
 import os
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_interviewer, require_interviewee
@@ -124,13 +125,16 @@ def list_my_submissions(
 @router.get("", response_model=list[CodeSubmissionListItem])
 def list_all_submissions(
     filter_status: str | None = None,
+    since: datetime | None = None,
     db: Session = Depends(get_db),
     _: User = Depends(require_interviewer),
 ):
-    """HR / 面试官查看所有提交（可按 status 筛选）"""
+    """HR / 面试官查看所有提交（可按 status 筛选；since 用于增量轮询）"""
     q = db.query(CodeSubmission, User).join(User, CodeSubmission.user_id == User.id)
     if filter_status:
         q = q.filter(CodeSubmission.status == filter_status)
+    if since:
+        q = q.filter(CodeSubmission.submitted_at > since)
     rows = q.order_by(CodeSubmission.submitted_at.desc()).all()
 
     result = []
@@ -153,6 +157,49 @@ def list_all_submissions(
             submitter_email=user.email,
         ))
     return result
+
+
+@router.get("/stats")
+def get_stats(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_interviewer),
+):
+    """面试挑战汇总数据（HR 看板用）"""
+    total_subs = db.query(func.count(CodeSubmission.id)).scalar() or 0
+    pending = db.query(func.count(CodeSubmission.id)).filter(
+        CodeSubmission.status == "pending_evaluation"
+    ).scalar() or 0
+    evaluated = db.query(func.count(CodeSubmission.id)).filter(
+        CodeSubmission.status == "evaluated"
+    ).scalar() or 0
+    avg_score = db.query(func.avg(CodeSubmission.score)).filter(
+        CodeSubmission.score.isnot(None)
+    ).scalar()
+
+    grade_rows = (
+        db.query(CodeSubmission.grade, func.count(CodeSubmission.id))
+        .filter(CodeSubmission.grade.isnot(None))
+        .group_by(CodeSubmission.grade)
+        .all()
+    )
+    grade_dist = {g: c for g, c in grade_rows}
+
+    # 面试者注册总数
+    interviewee_role = db.query(Role).filter(Role.name == "interviewee").first()
+    total_interviewees = 0
+    if interviewee_role:
+        total_interviewees = db.query(func.count(User.id)).filter(
+            User.role_id == interviewee_role.id, User.is_active.is_(True)
+        ).scalar() or 0
+
+    return {
+        "total_interviewees": total_interviewees,
+        "total_submissions": total_subs,
+        "pending": pending,
+        "evaluated": evaluated,
+        "avg_score": round(float(avg_score), 1) if avg_score is not None else None,
+        "grade_distribution": grade_dist,
+    }
 
 
 @router.get("/pending", response_model=list[CodeSubmissionBrief])

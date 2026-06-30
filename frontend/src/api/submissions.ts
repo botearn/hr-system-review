@@ -24,11 +24,25 @@ export interface ScorePayload {
   notes: string | null;
 }
 
+export interface SubmissionStats {
+  total_interviewees: number;
+  total_submissions: number;
+  pending: number;
+  evaluated: number;
+  avg_score: number | null;
+  grade_distribution: Record<string, number>;
+}
+
 export const submissionsApi = {
-  list: (filter_status?: string) =>
+  list: (filter_status?: string, since?: string) =>
     apiClient.get<SubmissionListItem[]>("/code-submissions", {
-      params: filter_status ? { filter_status } : undefined,
+      params: {
+        ...(filter_status ? { filter_status } : {}),
+        ...(since ? { since } : {}),
+      },
     }),
+
+  stats: () => apiClient.get<SubmissionStats>("/code-submissions/stats"),
 
   score: (id: number, payload: ScorePayload) =>
     apiClient.post(`/code-submissions/${id}/score`, payload),

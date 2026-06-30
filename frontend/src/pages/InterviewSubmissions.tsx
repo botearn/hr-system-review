@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -14,10 +14,9 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { LinkOutlined, UserOutlined } from "@ant-design/icons";
+import { LinkOutlined, ReloadOutlined, UserOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
-import { submissionsApi, type SubmissionListItem } from "@/api/submissions";
-import { useAuthStore } from "@/store/auth";
+import { submissionsApi, type SubmissionListItem, type SubmissionStats } from "@/api/submissions";
 
 const { Text, Link } = Typography;
 
@@ -41,29 +40,42 @@ function fmtSeconds(s: number) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+const POLL_MS = 30_000;
+
 export default function InterviewSubmissions() {
   const navigate = useNavigate();
-  const user = useAuthStore((s) => s.user);
   const [data, setData] = useState<SubmissionListItem[]>([]);
+  const [stats, setStats] = useState<SubmissionStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("all");
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
 
   // 打分 Modal
   const [scoreTarget, setScoreTarget] = useState<SubmissionListItem | null>(null);
   const [scoreLoading, setScoringLoading] = useState(false);
   const [form] = Form.useForm();
 
-  const load = (status?: string) => {
-    setLoading(true);
-    submissionsApi
-      .list(status === "all" ? undefined : status)
-      .then((r) => setData(r.data))
-      .finally(() => setLoading(false));
+  const load = (status?: string, silent = false) => {
+    if (!silent) setLoading(true);
+    Promise.all([
+      submissionsApi.list(status === "all" ? undefined : status),
+      submissionsApi.stats(),
+    ]).then(([listRes, statsRes]) => {
+      setData(listRes.data);
+      setStats(statsRes.data);
+    }).finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load(tab);
   }, [tab]);
+
+  // 30s 静默自动刷新
+  useEffect(() => {
+    const id = setInterval(() => load(tabRef.current, true), POLL_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const handleScore = async (values: { score: number; grade: string | null; notes: string | null }) => {
     if (!scoreTarget) return;
@@ -81,10 +93,12 @@ export default function InterviewSubmissions() {
     }
   };
 
-  // 统计
-  const total = data.length;
-  const pending = data.filter((s) => s.status === "pending_evaluation").length;
-  const evaluated = data.filter((s) => s.status === "evaluated").length;
+  // 统计（优先用 stats 接口，fallback 到本地计算）
+  const total = stats?.total_submissions ?? data.length;
+  const pending = stats?.pending ?? data.filter((s) => s.status === "pending_evaluation").length;
+  const evaluated = stats?.evaluated ?? data.filter((s) => s.status === "evaluated").length;
+  const totalInterviewees = stats?.total_interviewees ?? 0;
+  const avgScore = stats?.avg_score ?? null;
 
   const columns: ColumnsType<SubmissionListItem> = [
     {
@@ -230,17 +244,20 @@ export default function InterviewSubmissions() {
         <div>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#1a1a4e" }}>面试挑战管理</div>
           <div style={{ fontSize: 13, color: "#8c8c8c", marginTop: 2 }}>
-            管理候选人提交的面试作品，进行评分与结果反馈
+            管理候选人提交的面试作品，进行评分与结果反馈 · 每 30 秒自动刷新
           </div>
         </div>
+        <Button icon={<ReloadOutlined />} onClick={() => load(tab)}>刷新</Button>
       </div>
 
       {/* 统计卡 */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
+          { label: "面试者注册", value: totalInterviewees, color: "#722ed1" },
           { label: "总提交", value: total, color: "#1a1a4e" },
           { label: "待评估", value: pending, color: "#f59e0b" },
           { label: "已评估", value: evaluated, color: "#10b981" },
+          { label: "平均分", value: avgScore != null ? avgScore.toFixed(1) : "—", color: "#2baee8" },
         ].map((card) => (
           <div
             key={card.label}
