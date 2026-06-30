@@ -58,6 +58,7 @@ const CHALLENGES = [
 ];
 
 const TIMER_KEY = "interview_selected_timer";
+const CHALLENGE_KEY = "interview_selected_challenge"; // 持久化已选题目 id
 
 export default function InterviewPlatform() {
   const navigate = useNavigate();
@@ -70,9 +71,11 @@ export default function InterviewPlatform() {
   const [pendingTitle, setPendingTitle] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
 
-  // 已确认的选题（驱动提交表单）
-  const [confirmedId, setConfirmedId] = useState("");
-  const [confirmedTitle, setConfirmedTitle] = useState("");
+  // 已确认的选题（驱动提交表单），从 localStorage 恢复
+  const savedChallenge = localStorage.getItem(CHALLENGE_KEY) ?? "";
+  const savedTitle = CHALLENGES.find((c) => c.id === savedChallenge)?.title ?? "";
+  const [confirmedId, setConfirmedId] = useState(savedChallenge);
+  const [confirmedTitle, setConfirmedTitle] = useState(savedTitle);
 
   // 计时器
   const [timerRunning, setTimerRunning] = useState(false);
@@ -127,6 +130,7 @@ export default function InterviewPlatform() {
     setModalOpen(false);
     setConfirmedId(pendingId);
     setConfirmedTitle(pendingTitle);
+    localStorage.setItem(CHALLENGE_KEY, pendingId); // 持久化选题
     if (!localStorage.getItem(TIMER_KEY)) {
       localStorage.setItem(TIMER_KEY, String(Date.now()));
       setTimerRunning(true);
@@ -158,6 +162,7 @@ export default function InterviewPlatform() {
       await apiClient.post("/code-submissions", fd, { headers: { "Content-Type": "multipart/form-data" } });
       setSubmitted(true);
       localStorage.removeItem(TIMER_KEY);
+      localStorage.removeItem(CHALLENGE_KEY);
     } catch (err: any) {
       const msg = err?.response?.data?.detail ?? err?.message ?? "提交失败，请重试";
       alert(`提交失败：${msg}`);
@@ -294,6 +299,7 @@ export default function InterviewPlatform() {
             <button
               onClick={() => {
                 localStorage.removeItem(TIMER_KEY);
+                localStorage.removeItem(CHALLENGE_KEY);
                 window.location.reload();
               }}
               style={{ background: "none", border: "1px solid #3a3a45", color: "#6b6b78", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}
