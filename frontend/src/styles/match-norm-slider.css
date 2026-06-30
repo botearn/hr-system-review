@@ -1,0 +1,16 @@
+/* Smooth-slide all sliders inside the weight tune drawer.
+ * When the user drags one slider, the others' thumbs need to glide to
+ * their new normalized positions instead of jumping. */
+.match-norm-slider .ant-slider-handle,
+.match-norm-slider .ant-slider-track {
+  transition:
+    inset-inline-start 220ms cubic-bezier(0.33, 1, 0.68, 1),
+    width 220ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+/* Don't animate the slider that's currently being dragged — let it follow
+ * the cursor in real time. AntD adds .ant-slider-handle-dragging while drag. */
+.match-norm-slider .ant-slider-handle-dragging,
+.match-norm-slider .ant-slider-handle-dragging + .ant-slider-track {
+  transition: none;
+}

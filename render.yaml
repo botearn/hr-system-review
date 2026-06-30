@@ -1,0 +1,60 @@
+# Render.com blueprint. Deploy the backend as a web service.
+# Frontend is deployed separately on Vercel.
+#
+# Usage:
+#   1. Push this repo to GitHub
+#   2. Render dashboard → New → Blueprint → pick this repo
+#   3. Fill in the env vars marked `sync: false` in the dashboard
+#
+services:
+  - type: web
+    name: hr-system-backend
+    runtime: docker
+    plan: starter               # always-on, no cold starts (~$7/mo)
+    region: singapore
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENV
+        value: production
+      - key: PORT
+        value: "8000"
+
+      # Supabase Postgres (direct connection string, includes pgvector)
+      - key: DATABASE_URL
+        sync: false
+
+      # LLM (chat) — 智谱 GLM-4-Flash（免费）
+      - key: LLM_PROVIDER
+        value: zhipu
+      - key: LLM_MODEL
+        value: glm-4-flash
+      - key: LLM_BASE_URL
+        value: https://open.bigmodel.cn/api/paas/v4
+      - key: LLM_API_KEY
+        sync: false             # 从 https://open.bigmodel.cn 获取
+
+      # Embedding — 智谱 embedding-3（免费）复用同一 key
+      - key: EMBEDDING_PROVIDER
+        value: zhipu
+      # EMBEDDING_API_KEY 留空时自动用 LLM_API_KEY
+
+      # File storage — Supabase Storage
+      - key: STORAGE_BACKEND
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: resumes
+
+      # JWT secret (generate a 32-byte random value)
+      - key: JWT_SECRET
+        generateValue: true
+
+      # CORS: Vercel deployment URL（上线后填）
+      - key: CORS_ORIGINS
+        sync: false
