@@ -28,6 +28,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { key: "/agent", label: "AI 助手", icon: <RobotOutlined /> },
   { key: "/dashboard", label: "数据看板", icon: <DashboardOutlined /> },
+  { key: "/interview-submissions", label: "面试挑战", icon: <CodeOutlined /> },
   { key: "/matches", label: "智能匹配", icon: <ThunderboltOutlined /> },
   { key: "/candidates", label: "候选人库", icon: <TeamOutlined /> },
   { key: "/positions", label: "岗位管理", icon: <ApartmentOutlined /> },
@@ -40,15 +41,11 @@ export default function Sidebar() {
   const active = location.pathname;
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role_name === "admin";
-  const canReviewInterview = user?.role_name === "admin" || user?.role_name === "interviewer";
 
   const W = collapsed ? 56 : 200;
 
   const navItems: NavItem[] = [
     ...NAV_ITEMS,
-    ...(canReviewInterview
-      ? [{ key: "/interview-submissions", label: "面试挑战", icon: <CodeOutlined /> }]
-      : []),
     ...(isAdmin ? [{ key: "/users", label: "账号管理", icon: <SettingOutlined /> }] : []),
   ];
 
