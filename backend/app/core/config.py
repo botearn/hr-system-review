@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     web_enrichment_enabled: bool = True
 
     cors_origins: str = "*"
+    cors_origin_regex: str = r"https://hr-system-review(?:-[a-z0-9-]+)?(?:-hr-system)?\.vercel\.app"
 
     @property
     def database_url(self) -> str:
