@@ -18,6 +18,7 @@ const AgentPage = lazy(() => import("./pages/Agent"));
 const CandidatesPage = lazy(() => import("./pages/Candidates"));
 const CompaniesPage = lazy(() => import("./pages/Companies"));
 const PositionsPage = lazy(() => import("./pages/Positions"));
+const InterviewSubmissionsPage = lazy(() => import("./pages/InterviewSubmissions"));
 const MatchesPage = lazy(() => import("./pages/Matches"));
 const DashboardPage = lazy(() => import("./pages/Dashboard"));
 const ProfilePage = lazy(() => import("./pages/Profile"));
@@ -61,6 +62,10 @@ const PAGE_HINTS: Record<string, { label: string; hints: string[] }> = {
   "/matches": {
     label: "智能匹配",
     hints: ["推荐最佳匹配", "解释匹配理由", "找适合的候选人"],
+  },
+  "/interview-submissions": {
+    label: "面试挑战",
+    hints: ["待评估有哪些", "分数分布如何", "谁的提交最优秀"],
   },
 };
 
@@ -168,6 +173,7 @@ function ProtectedLayout() {
               <Route path="/matches" element={<MatchesPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/users" element={<UsersPage />} />
+              <Route path="/interview-submissions" element={<InterviewSubmissionsPage />} />
               <Route path="/" element={<Navigate to="/agent" replace />} />
               <Route path="*" element={<Navigate to="/agent" replace />} />
             </Routes>

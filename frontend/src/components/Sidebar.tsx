@@ -11,6 +11,7 @@ import {
   LeftOutlined,
   RightOutlined,
   SettingOutlined,
+  CodeOutlined,
 } from "@ant-design/icons";
 import { useAuthStore } from "@/store/auth";
 
@@ -39,11 +40,15 @@ export default function Sidebar() {
   const active = location.pathname;
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role_name === "admin";
+  const canReviewInterview = user?.role_name === "admin" || user?.role_name === "interviewer";
 
   const W = collapsed ? 56 : 200;
 
   const navItems: NavItem[] = [
     ...NAV_ITEMS,
+    ...(canReviewInterview
+      ? [{ key: "/interview-submissions", label: "面试挑战", icon: <CodeOutlined /> }]
+      : []),
     ...(isAdmin ? [{ key: "/users", label: "账号管理", icon: <SettingOutlined /> }] : []),
   ];
 

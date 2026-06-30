@@ -14,6 +14,7 @@ from app.models.user import Role, User
 from app.schemas.code_submission import (
     CodeSubmissionBrief,
     CodeSubmissionCreate,
+    CodeSubmissionListItem,
     CodeSubmissionOut,
     CodeSubmissionScoreIn,
 )
@@ -118,6 +119,40 @@ def list_my_submissions(
         .all()
     )
     return subs
+
+
+@router.get("", response_model=list[CodeSubmissionListItem])
+def list_all_submissions(
+    filter_status: str | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_interviewer),
+):
+    """HR / 面试官查看所有提交（可按 status 筛选）"""
+    q = db.query(CodeSubmission, User).join(User, CodeSubmission.user_id == User.id)
+    if filter_status:
+        q = q.filter(CodeSubmission.status == filter_status)
+    rows = q.order_by(CodeSubmission.submitted_at.desc()).all()
+
+    result = []
+    for sub, user in rows:
+        result.append(CodeSubmissionListItem(
+            id=sub.id,
+            challenge_id=sub.challenge_id,
+            github_url=sub.github_url,
+            candidate_id=sub.candidate_id,
+            status=sub.status,
+            submitted_at=sub.submitted_at,
+            time_spent_seconds=sub.time_spent_seconds,
+            score=float(sub.score) if sub.score is not None else None,
+            grade=sub.grade,
+            notes=sub.notes,
+            evaluated_at=sub.evaluated_at,
+            user_id=sub.user_id,
+            submitter_username=user.username,
+            submitter_name=user.display_name,
+            submitter_email=user.email,
+        ))
+    return result
 
 
 @router.get("/pending", response_model=list[CodeSubmissionBrief])
