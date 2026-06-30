@@ -3,11 +3,13 @@ import { apiClient } from "./client";
 export interface SubmissionListItem {
   id: number;
   challenge_id: string;
-  github_url: string;
+  github_url: string | null;
   candidate_id: number | null;
   status: string;
-  submitted_at: string;
+  selected_at: string | null;
+  submitted_at: string | null;
   time_spent_seconds: number | null;
+  submitter_notes: string | null;
   score: number | null;
   grade: string | null;
   notes: string | null;
@@ -16,6 +18,7 @@ export interface SubmissionListItem {
   submitter_username: string;
   submitter_name: string | null;
   submitter_email: string | null;
+  updated_at: string;
 }
 
 export interface ScorePayload {
@@ -26,6 +29,7 @@ export interface ScorePayload {
 
 export interface SubmissionStats {
   total_interviewees: number;
+  total_selected: number;
   total_submissions: number;
   pending: number;
   evaluated: number;
@@ -34,6 +38,9 @@ export interface SubmissionStats {
 }
 
 export const submissionsApi = {
+  select: (challenge_id: string) =>
+    apiClient.post<SubmissionListItem>("/code-submissions/select", { challenge_id }),
+
   list: (filter_status?: string, since?: string) =>
     apiClient.get<SubmissionListItem[]>("/code-submissions", {
       params: {

@@ -1,6 +1,5 @@
 from datetime import UTC, datetime
 import hashlib
-import os
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import func
@@ -14,14 +13,111 @@ from app.models.code_submission import CodeSubmission
 from app.models.user import Role, User
 from app.schemas.code_submission import (
     CodeSubmissionBrief,
-    CodeSubmissionCreate,
     CodeSubmissionListItem,
     CodeSubmissionOut,
     CodeSubmissionScoreIn,
+    CodeSubmissionSelectIn,
 )
 import app.services.storage as storage_service
 
 router = APIRouter(prefix="/code-submissions", tags=["code-submissions"])
+
+
+def _admin_owner_id(db: Session, fallback_user_id: int) -> int:
+    admin = (
+        db.query(User)
+        .join(Role)
+        .filter(Role.name == "admin", User.is_active.is_(True))
+        .first()
+    )
+    return admin.id if admin else fallback_user_id
+
+
+def _ensure_candidate_for_submission(
+    *,
+    db: Session,
+    current_user: User,
+    challenge_id: str,
+    github_url: str,
+    resume_attachment_id: int | None,
+    name: str | None,
+    email: str | None,
+) -> int:
+    owner_id = _admin_owner_id(db, current_user.id)
+    display_name = (name or current_user.display_name or current_user.username or "面试候选人").strip()
+    cand_email = (email or current_user.email or None)
+
+    candidate = None
+    if cand_email:
+        candidate = (
+            db.query(Candidate)
+            .filter(Candidate.email == cand_email, Candidate.is_deleted.is_(False))
+            .order_by(Candidate.created_at.desc())
+            .first()
+        )
+
+    note = f"来自面试平台 - 题目 {challenge_id}\n作品链接：{github_url}"
+    if candidate:
+        if resume_attachment_id and not candidate.resume_file_id:
+            candidate.resume_file_id = resume_attachment_id
+        if not candidate.notes:
+            candidate.notes = note
+        elif github_url not in candidate.notes:
+            candidate.notes = f"{candidate.notes}\n\n{note}"
+        db.flush()
+        return candidate.id
+
+    candidate = Candidate(
+        owner_id=owner_id,
+        name=display_name[:64],
+        email=cand_email,
+        resume_file_id=resume_attachment_id,
+        source="self_upload",
+        job_status="active",
+        notes=note,
+    )
+    db.add(candidate)
+    db.flush()
+    return candidate.id
+
+
+@router.post("/select", response_model=CodeSubmissionOut, status_code=status.HTTP_201_CREATED)
+def select_challenge(
+    payload: CodeSubmissionSelectIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_interviewee),
+):
+    """面试者确认选题。这个状态会进入 HR 后台并触发面试官通知。"""
+    existing = (
+        db.query(CodeSubmission)
+        .filter(
+            CodeSubmission.user_id == current_user.id,
+            CodeSubmission.status.in_(["challenge_selected", "pending_evaluation"]),
+        )
+        .order_by(CodeSubmission.created_at.desc())
+        .first()
+    )
+
+    now = datetime.now(UTC)
+    if existing:
+        if existing.status == "pending_evaluation":
+            return existing
+        existing.challenge_id = payload.challenge_id
+        existing.selected_at = existing.selected_at or now
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    selection = CodeSubmission(
+        user_id=current_user.id,
+        challenge_id=payload.challenge_id,
+        status="challenge_selected",
+        selected_at=now,
+    )
+    db.add(selection)
+    db.commit()
+    db.refresh(selection)
+    return selection
 
 
 @router.post("", response_model=CodeSubmissionOut, status_code=status.HTTP_201_CREATED)
@@ -29,6 +125,7 @@ async def create_submission(
     challenge_id: str = Form(...),
     github_url: str = Form(...),
     notes: str | None = Form(None),
+    time_spent_seconds: int | None = Form(None),
     name: str | None = Form(None),
     email: str | None = Form(None),
     resume: UploadFile | None = File(None),
@@ -37,7 +134,6 @@ async def create_submission(
 ):
     """面试者提交代码作品（支持上传简历，自动入 candidate 库）"""
     resume_attachment_id: int | None = None
-    candidate_id: int | None = None
 
     if resume and resume.filename:
         # 1. 读取并保存文件
@@ -65,42 +161,50 @@ async def create_submission(
         db.flush()
         resume_attachment_id = att.id
 
-        # 3. 自动创建 Candidate（简历入库）
-        # 找到一个活跃的 admin 作为 owner（interview 流入的候选人归 admin 池）
-        admin = (
-            db.query(User)
-            .join(Role)
-            .filter(Role.name == "admin", User.is_active.is_(True))
-            .first()
-        )
-        owner_id = admin.id if admin else current_user.id
-
-        display_name = (name or current_user.display_name or current_user.username or "面试候选人").strip()
-        cand_email = (email or current_user.email or None)
-
-        candidate = Candidate(
-            owner_id=owner_id,
-            name=display_name[:64],
-            email=cand_email,
-            resume_file_id=att.id,
-            source="self_upload",
-            job_status="active",
-            notes=f"来自面试平台 - 题目 {challenge_id}",
-        )
-        db.add(candidate)
-        db.flush()
-        candidate_id = candidate.id
-
-    # 4. 创建 CodeSubmission 记录
-    submission = CodeSubmission(
-        user_id=current_user.id,
+    candidate_id = _ensure_candidate_for_submission(
+        db=db,
+        current_user=current_user,
         challenge_id=challenge_id,
         github_url=github_url,
         resume_attachment_id=resume_attachment_id,
-        candidate_id=candidate_id,
-        status="pending_evaluation",
-        submitted_at=datetime.now(UTC),
+        name=name,
+        email=email,
     )
+
+    submission = (
+        db.query(CodeSubmission)
+        .filter(
+            CodeSubmission.user_id == current_user.id,
+            CodeSubmission.status == "challenge_selected",
+        )
+        .order_by(CodeSubmission.created_at.desc())
+        .first()
+    )
+
+    if not submission:
+        existing_submitted = (
+            db.query(CodeSubmission)
+            .filter(
+                CodeSubmission.user_id == current_user.id,
+                CodeSubmission.status.in_(["pending_evaluation", "evaluated"]),
+            )
+            .order_by(CodeSubmission.created_at.desc())
+            .first()
+        )
+        if existing_submitted:
+            raise HTTPException(status_code=400, detail="作品已经提交过了")
+        submission = CodeSubmission(user_id=current_user.id, selected_at=datetime.now(UTC))
+        db.add(submission)
+
+    submission.challenge_id = challenge_id
+    submission.github_url = github_url
+    submission.submitter_notes = notes
+    submission.resume_attachment_id = resume_attachment_id
+    submission.candidate_id = candidate_id
+    submission.status = "pending_evaluation"
+    submission.submitted_at = datetime.now(UTC)
+    submission.time_spent_seconds = time_spent_seconds
+
     db.add(submission)
     db.commit()
     db.refresh(submission)
@@ -116,7 +220,9 @@ def list_my_submissions(
     subs = (
         db.query(CodeSubmission)
         .filter(CodeSubmission.user_id == current_user.id)
-        .order_by(CodeSubmission.submitted_at.desc())
+        .order_by(
+            func.coalesce(CodeSubmission.submitted_at, CodeSubmission.selected_at, CodeSubmission.created_at).desc()
+        )
         .all()
     )
     return subs
@@ -134,8 +240,10 @@ def list_all_submissions(
     if filter_status:
         q = q.filter(CodeSubmission.status == filter_status)
     if since:
-        q = q.filter(CodeSubmission.submitted_at > since)
-    rows = q.order_by(CodeSubmission.submitted_at.desc()).all()
+        q = q.filter(CodeSubmission.updated_at > since)
+    rows = q.order_by(
+        func.coalesce(CodeSubmission.submitted_at, CodeSubmission.selected_at, CodeSubmission.created_at).desc()
+    ).all()
 
     result = []
     for sub, user in rows:
@@ -145,8 +253,10 @@ def list_all_submissions(
             github_url=sub.github_url,
             candidate_id=sub.candidate_id,
             status=sub.status,
+            selected_at=sub.selected_at,
             submitted_at=sub.submitted_at,
             time_spent_seconds=sub.time_spent_seconds,
+            submitter_notes=sub.submitter_notes,
             score=float(sub.score) if sub.score is not None else None,
             grade=sub.grade,
             notes=sub.notes,
@@ -155,6 +265,7 @@ def list_all_submissions(
             submitter_username=user.username,
             submitter_name=user.display_name,
             submitter_email=user.email,
+            updated_at=sub.updated_at,
         ))
     return result
 
@@ -165,7 +276,12 @@ def get_stats(
     _: User = Depends(require_interviewer),
 ):
     """面试挑战汇总数据（HR 看板用）"""
-    total_subs = db.query(func.count(CodeSubmission.id)).scalar() or 0
+    total_selected = db.query(func.count(CodeSubmission.id)).filter(
+        CodeSubmission.status == "challenge_selected"
+    ).scalar() or 0
+    total_subs = db.query(func.count(CodeSubmission.id)).filter(
+        CodeSubmission.submitted_at.isnot(None)
+    ).scalar() or 0
     pending = db.query(func.count(CodeSubmission.id)).filter(
         CodeSubmission.status == "pending_evaluation"
     ).scalar() or 0
@@ -194,6 +310,7 @@ def get_stats(
 
     return {
         "total_interviewees": total_interviewees,
+        "total_selected": total_selected,
         "total_submissions": total_subs,
         "pending": pending,
         "evaluated": evaluated,

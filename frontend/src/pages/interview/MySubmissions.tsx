@@ -6,9 +6,10 @@ import { apiClient } from "@/api/client";
 interface Submission {
   id: number;
   challenge_id: string;
-  github_url: string;
+  github_url: string | null;
   status: string;
-  submitted_at: string;
+  selected_at?: string | null;
+  submitted_at?: string | null;
   time_spent_seconds?: number | null;
   score?: number | null;
   grade?: string | null;
@@ -34,6 +35,7 @@ const TIMER_KEY = "interview_selected_timer";
 
 function getActiveStep(subs: Submission[], timerRunning: boolean) {
   if (subs.length === 0) return timerRunning ? 2 : 0;
+  if (subs[0].status === "challenge_selected") return 2;
   return subs[0].status === "evaluated" ? 4 : 3;
 }
 
@@ -103,6 +105,7 @@ export default function MySubmissions() {
   const activeStep = getActiveStep(data, running);
   const sub = data[0] ?? null;
   const evaluated = sub?.status === "evaluated";
+  const selectedOnly = sub?.status === "challenge_selected";
 
   return (
     <div style={{ minHeight: "100vh", background: "#0f0f14", color: "#e6e6ea", fontFamily: '-apple-system,"PingFang SC",sans-serif' }}>
@@ -138,6 +141,8 @@ export default function MySubmissions() {
             {sub
               ? evaluated
                 ? "你的评估已完成，查看结果和得分。"
+                : selectedOnly
+                ? "题目已确认，完成后回到题目页提交作品。"
                 : "作品已收到，面试官正在评估，耐心等待一下。"
               : running
               ? "计时已开始，完成后去提交页提交作品。"
@@ -269,6 +274,8 @@ export default function MySubmissions() {
               position: "absolute", top: 0, left: 0, right: 0, height: 3,
               background: evaluated
                 ? "linear-gradient(90deg,#10b981,#2baee8)"
+                : selectedOnly
+                ? "linear-gradient(90deg,#7b52d3,#f59e0b)"
                 : "linear-gradient(90deg,#7b52d3,#2baee8)",
             }} />
 
@@ -285,19 +292,25 @@ export default function MySubmissions() {
                 {/* GitHub 链接 */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                   <span style={{ fontSize: 12, color: "#6b6b78", flexShrink: 0 }}>仓库</span>
-                  <a
-                    href={sub.github_url} target="_blank" rel="noreferrer"
-                    style={{ color: "#7b52d3", fontSize: 13, wordBreak: "break-all", textDecoration: "none" }}
-                  >
-                    {sub.github_url}
-                  </a>
+                  {sub.github_url ? (
+                    <a
+                      href={sub.github_url} target="_blank" rel="noreferrer"
+                      style={{ color: "#7b52d3", fontSize: 13, wordBreak: "break-all", textDecoration: "none" }}
+                    >
+                      {sub.github_url}
+                    </a>
+                  ) : (
+                    <span style={{ color: "#6b6b78", fontSize: 13 }}>完成作品后回到题目页提交链接</span>
+                  )}
                 </div>
 
                 {/* 元信息行 */}
                 <div style={{ display: "flex", gap: 20, marginTop: 16, flexWrap: "wrap" }}>
                   <div style={{ fontSize: 12 }}>
-                    <span style={{ color: "#6b6b78" }}>提交时间　</span>
-                    <span style={{ color: "#a0a0aa" }}>{new Date(sub.submitted_at).toLocaleString("zh-CN")}</span>
+                    <span style={{ color: "#6b6b78" }}>{sub.submitted_at ? "提交时间　" : "选题时间　"}</span>
+                    <span style={{ color: "#a0a0aa" }}>
+                      {new Date(sub.submitted_at ?? sub.selected_at ?? "").toLocaleString("zh-CN")}
+                    </span>
                   </div>
                   {sub.time_spent_seconds != null && (
                     <div style={{ fontSize: 12 }}>
@@ -313,11 +326,11 @@ export default function MySubmissions() {
                 <span style={{
                   display: "inline-block", padding: "5px 14px", borderRadius: 999,
                   fontSize: 12, fontWeight: 600,
-                  background: evaluated ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.10)",
-                  color: evaluated ? "#10b981" : "#f59e0b",
-                  border: `1px solid ${evaluated ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.25)"}`,
+                  background: evaluated ? "rgba(16,185,129,0.12)" : selectedOnly ? "rgba(123,82,211,0.12)" : "rgba(245,158,11,0.10)",
+                  color: evaluated ? "#10b981" : selectedOnly ? "#c084fc" : "#f59e0b",
+                  border: `1px solid ${evaluated ? "rgba(16,185,129,0.3)" : selectedOnly ? "rgba(123,82,211,0.3)" : "rgba(245,158,11,0.25)"}`,
                 }}>
-                  {evaluated ? "已评估" : "评估中…"}
+                  {evaluated ? "已评估" : selectedOnly ? "题目进行中" : "评估中…"}
                 </span>
 
                 {sub.score != null && (
@@ -343,7 +356,15 @@ export default function MySubmissions() {
             </div>
 
             {/* 等待提示 */}
-            {!evaluated && (
+            {selectedOnly ? (
+              <div style={{
+                marginTop: 24, padding: "14px 18px",
+                background: "rgba(123,82,211,0.07)", border: "1px solid rgba(123,82,211,0.18)",
+                borderRadius: 10, fontSize: 13, color: "#a0a0aa", lineHeight: 1.7,
+              }}>
+                题目已记录。完成作品后，回到题目页提交 GitHub 链接和简历，系统会把你的信息同步给面试官。
+              </div>
+            ) : !evaluated && (
               <div style={{
                 marginTop: 24, padding: "14px 18px",
                 background: "rgba(123,82,211,0.07)", border: "1px solid rgba(123,82,211,0.18)",

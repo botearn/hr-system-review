@@ -12,6 +12,11 @@ class CodeSubmissionCreate(BaseModel):
     resume_attachment_id: int | None = None
 
 
+class CodeSubmissionSelectIn(BaseModel):
+    """面试者确认选题时使用"""
+    challenge_id: str = Field(..., pattern="^(01|02|03|04)$")
+
+
 class CodeSubmissionScoreIn(BaseModel):
     """面试官打分使用"""
     score: float = Field(..., ge=0, le=100)
@@ -23,13 +28,15 @@ class CodeSubmissionOut(BaseModel):
     id: int
     user_id: int
     challenge_id: str
-    github_url: str
+    github_url: str | None = None
     resume_attachment_id: int | None = None
     candidate_id: int | None = None
     status: str
-    submitted_at: datetime
+    selected_at: datetime | None = None
+    submitted_at: datetime | None = None
 
     time_spent_seconds: int | None = None
+    submitter_notes: str | None = None
     score: float | None = None
     grade: str | None = None
     notes: str | None = None
@@ -43,11 +50,13 @@ class CodeSubmissionBrief(BaseModel):
     """列表用精简信息"""
     id: int
     challenge_id: str
-    github_url: str
+    github_url: str | None = None
     candidate_id: int | None
     status: str
-    submitted_at: datetime
+    selected_at: datetime | None = None
+    submitted_at: datetime | None = None
     time_spent_seconds: int | None = None
+    submitter_notes: str | None = None
     score: float | None = None
     grade: str | None = None
 
@@ -58,11 +67,13 @@ class CodeSubmissionListItem(BaseModel):
     """HR 后台面试管理列表用，含提交者信息"""
     id: int
     challenge_id: str
-    github_url: str
+    github_url: str | None = None
     candidate_id: int | None
     status: str
-    submitted_at: datetime
+    selected_at: datetime | None = None
+    submitted_at: Optional[datetime] = None
     time_spent_seconds: int | None = None
+    submitter_notes: str | None = None
     score: Optional[float] = None
     grade: str | None = None
     notes: str | None = None
@@ -72,5 +83,6 @@ class CodeSubmissionListItem(BaseModel):
     submitter_username: str
     submitter_name: str | None = None
     submitter_email: str | None = None
+    updated_at: datetime
 
     model_config = {"from_attributes": False}

@@ -51,24 +51,44 @@ export function useSubmissionNotifier() {
           });
         }
 
-        // 新提交：用 since 拉增量列表获取名字 + 题目
-        if (stats.total_submissions > prev.total_submissions && lastPollTs.current) {
+        const hasSelectionChange = stats.total_selected > prev.total_selected;
+        const hasSubmissionChange = stats.total_submissions > prev.total_submissions;
+
+        if ((hasSelectionChange || hasSubmissionChange) && lastPollTs.current) {
           try {
             const newRes = await submissionsApi.list(undefined, lastPollTs.current);
             const newSubs = newRes.data;
             if (newSubs.length > 0) {
-              const first = newSubs[0];
-              const name = first.submitter_name || first.submitter_username;
-              const challenge = CHALLENGE_NAMES[first.challenge_id] ?? `题目 ${first.challenge_id}`;
-              const extra = newSubs.length > 1 ? `，以及另外 ${newSubs.length - 1} 份` : "";
-              notification.success({
-                message: "新作品提交",
-                description: `${name} 提交了「${challenge}」${extra}`,
-                placement: "topRight",
-                duration: 8,
-                onClick: () => navigate("/interview-submissions"),
-                style: { cursor: "pointer" },
-              });
+              const submitted = newSubs.filter((x) => x.status === "pending_evaluation");
+              const selected = newSubs.filter((x) => x.status === "challenge_selected");
+              if (submitted.length > 0) {
+                const first = submitted[0];
+                const name = first.submitter_name || first.submitter_username;
+                const challenge = CHALLENGE_NAMES[first.challenge_id] ?? `题目 ${first.challenge_id}`;
+                const extra = submitted.length > 1 ? `，以及另外 ${submitted.length - 1} 份` : "";
+                notification.success({
+                  message: "新作品提交",
+                  description: `${name} 提交了「${challenge}」${extra}`,
+                  placement: "topRight",
+                  duration: 8,
+                  onClick: () => navigate("/interview-submissions"),
+                  style: { cursor: "pointer" },
+                });
+              }
+              if (selected.length > 0) {
+                const first = selected[0];
+                const name = first.submitter_name || first.submitter_username;
+                const challenge = CHALLENGE_NAMES[first.challenge_id] ?? `题目 ${first.challenge_id}`;
+                const extra = selected.length > 1 ? `，以及另外 ${selected.length - 1} 位` : "";
+                notification.info({
+                  message: "候选人已选题",
+                  description: `${name} 选择了「${challenge}」${extra}`,
+                  placement: "topRight",
+                  duration: 6,
+                  onClick: () => navigate("/interview-submissions"),
+                  style: { cursor: "pointer" },
+                });
+              }
             }
           } catch {
             // 增量拉取失败不影响主流程

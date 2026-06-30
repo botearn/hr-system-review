@@ -34,6 +34,12 @@ const GRADE_COLOR: Record<string, string> = {
   C: "gold",
 };
 
+const STATUS_META: Record<string, { text: string; badge: "default" | "processing" | "success" | "warning" }> = {
+  challenge_selected: { text: "已选题", badge: "processing" },
+  pending_evaluation: { text: "待评估", badge: "warning" },
+  evaluated: { text: "已评估", badge: "success" },
+};
+
 function fmtSeconds(s: number) {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
@@ -95,6 +101,7 @@ export default function InterviewSubmissions() {
 
   // 统计（优先用 stats 接口，fallback 到本地计算）
   const total = stats?.total_submissions ?? data.length;
+  const selected = stats?.total_selected ?? data.filter((s) => s.status === "challenge_selected").length;
   const pending = stats?.pending ?? data.filter((s) => s.status === "pending_evaluation").length;
   const evaluated = stats?.evaluated ?? data.filter((s) => s.status === "evaluated").length;
   const totalInterviewees = stats?.total_interviewees ?? 0;
@@ -128,33 +135,51 @@ export default function InterviewSubmissions() {
       ),
     },
     {
-      title: "GitHub",
+      title: "作品 / 说明",
       width: 200,
       render: (_, r) => (
-        <Tooltip title={r.github_url}>
-          <Link href={r.github_url} target="_blank" style={{ fontSize: 12 }}>
-            <LinkOutlined style={{ marginRight: 4 }} />
-            {r.github_url.replace("https://github.com/", "").slice(0, 30)}
-            {r.github_url.length > 42 ? "…" : ""}
-          </Link>
-        </Tooltip>
+        <div>
+          {r.github_url ? (
+            <Tooltip title={r.github_url}>
+              <Link href={r.github_url} target="_blank" style={{ fontSize: 12 }}>
+                <LinkOutlined style={{ marginRight: 4 }} />
+                {r.github_url.replace("https://github.com/", "").slice(0, 30)}
+                {r.github_url.length > 42 ? "…" : ""}
+              </Link>
+            </Tooltip>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 11 }}>尚未提交链接</Text>
+          )}
+          {r.submitter_notes && (
+            <Tooltip title={r.submitter_notes}>
+              <div style={{ fontSize: 11, color: "#8c8c8c", marginTop: 4, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {r.submitter_notes}
+              </div>
+            </Tooltip>
+          )}
+        </div>
       ),
     },
     {
-      title: "提交时间",
+      title: "选题 / 提交时间",
       width: 140,
       render: (_, r) => (
-        <Text style={{ fontSize: 12 }}>
-          {new Date(r.submitted_at).toLocaleString("zh-CN", {
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </Text>
+        <div>
+          {r.selected_at && (
+            <div style={{ fontSize: 11, color: "#8c8c8c" }}>
+              选题 {new Date(r.selected_at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            </div>
+          )}
+          {r.submitted_at && (
+            <div style={{ fontSize: 12 }}>
+              提交 {new Date(r.submitted_at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            </div>
+          )}
+        </div>
       ),
       sorter: (a, b) =>
-        new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime(),
+        new Date(a.submitted_at ?? a.selected_at ?? 0).getTime() -
+        new Date(b.submitted_at ?? b.selected_at ?? 0).getTime(),
       defaultSortOrder: "descend",
     },
     {
@@ -170,12 +195,10 @@ export default function InterviewSubmissions() {
     {
       title: "状态",
       width: 100,
-      render: (_, r) =>
-        r.status === "evaluated" ? (
-          <Badge status="success" text={<Text style={{ fontSize: 12 }}>已评估</Text>} />
-        ) : (
-          <Badge status="warning" text={<Text style={{ fontSize: 12 }}>待评估</Text>} />
-        ),
+      render: (_, r) => {
+        const meta = STATUS_META[r.status] ?? { text: r.status, badge: "default" as const };
+        return <Badge status={meta.badge} text={<Text style={{ fontSize: 12 }}>{meta.text}</Text>} />;
+      },
     },
     {
       title: "得分 / 等级",
@@ -212,7 +235,9 @@ export default function InterviewSubmissions() {
       width: 90,
       fixed: "right",
       render: (_, r) =>
-        r.status === "pending_evaluation" ? (
+        r.status === "challenge_selected" ? (
+          <Text type="secondary" style={{ fontSize: 11 }}>等提交</Text>
+        ) : r.status === "pending_evaluation" ? (
           <Button
             type="primary"
             size="small"
@@ -254,6 +279,7 @@ export default function InterviewSubmissions() {
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
           { label: "面试者注册", value: totalInterviewees, color: "#722ed1" },
+          { label: "已选题", value: selected, color: "#1677ff" },
           { label: "总提交", value: total, color: "#1a1a4e" },
           { label: "待评估", value: pending, color: "#f59e0b" },
           { label: "已评估", value: evaluated, color: "#10b981" },
@@ -293,6 +319,7 @@ export default function InterviewSubmissions() {
           style={{ padding: "0 16px" }}
           items={[
             { key: "all", label: "全部" },
+            { key: "challenge_selected", label: `已选题 ${selected > 0 ? `(${selected})` : ""}` },
             { key: "pending_evaluation", label: `待评估 ${pending > 0 ? `(${pending})` : ""}` },
             { key: "evaluated", label: "已评估" },
           ]}
@@ -323,10 +350,14 @@ export default function InterviewSubmissions() {
       >
         {scoreTarget && (
           <div style={{ marginBottom: 16 }}>
-            <a href={scoreTarget.github_url} target="_blank" rel="noreferrer" style={{ fontSize: 13 }}>
-              <LinkOutlined style={{ marginRight: 6 }} />
-              {scoreTarget.github_url}
-            </a>
+            {scoreTarget.github_url ? (
+              <a href={scoreTarget.github_url} target="_blank" rel="noreferrer" style={{ fontSize: 13 }}>
+                <LinkOutlined style={{ marginRight: 6 }} />
+                {scoreTarget.github_url}
+              </a>
+            ) : (
+              <Text type="secondary">候选人尚未提交作品链接</Text>
+            )}
           </div>
         )}
         <Form form={form} layout="vertical" onFinish={handleScore}>

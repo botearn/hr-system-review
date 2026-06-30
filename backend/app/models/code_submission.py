@@ -10,6 +10,8 @@ class CodeSubmission(Base, TimestampMixin):
     """面试者代码作品提交记录。
 
     流程：
+        challenge_selected (已选题，计时开始)
+          →
         pending_evaluation   (已提交，等待面试官评估)
           → evaluated        (面试官已打分)
           → (可选) timeout   (超过时限仍提交的，可单独标记)
@@ -25,8 +27,8 @@ class CodeSubmission(Base, TimestampMixin):
     # 题目编号，目前支持 "01","02","03","04"
     challenge_id: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
 
-    # GitHub 仓库链接
-    github_url: Mapped[str] = mapped_column(Text, nullable=False)
+    # GitHub 仓库链接（选题阶段为空，提交阶段补齐）
+    github_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # 关联的简历附件（可选，提交时可带）
     resume_attachment_id: Mapped[int | None] = mapped_column(
@@ -43,10 +45,14 @@ class CodeSubmission(Base, TimestampMixin):
         String(32), default="pending_evaluation", nullable=False, index=True
     )
 
-    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    selected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 从选题到提交耗时（秒），可选，前端计时后上报
     time_spent_seconds: Mapped[int | None] = mapped_column(Integer)
+
+    # 面试者提交说明
+    submitter_notes: Mapped[str | None] = mapped_column(Text)
 
     # 评估结果（由 interviewer 填写）
     score: Mapped[float | None] = mapped_column(Numeric(5, 2))  # 0-100

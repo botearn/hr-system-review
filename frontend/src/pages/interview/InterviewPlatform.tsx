@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/auth";
 import { apiClient } from "@/api/client";
+import { submissionsApi } from "@/api/submissions";
 
 const CHALLENGES = [
   {
@@ -70,6 +71,7 @@ export default function InterviewPlatform() {
   const [pendingId, setPendingId] = useState("");
   const [pendingTitle, setPendingTitle] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [selecting, setSelecting] = useState(false);
 
   // 已确认的选题（驱动提交表单），从 localStorage 恢复
   const savedChallenge = localStorage.getItem(CHALLENGE_KEY) ?? "";
@@ -90,11 +92,26 @@ export default function InterviewPlatform() {
   const [submitted, setSubmitted] = useState(false);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
 
-  // 登录后检查是否已有提交
+  // 登录后检查是否已有提交/选题
   useEffect(() => {
     if (!accessToken || !isInterviewee) return;
     apiClient.get("/code-submissions/mine").then((r: any) => {
-      if (r.data?.length > 0) setAlreadySubmitted(true);
+      const records = r.data ?? [];
+      const latest = records[0];
+      if (records.some((x: any) => ["pending_evaluation", "evaluated"].includes(x.status))) {
+        setAlreadySubmitted(true);
+        return;
+      }
+      if (latest?.status === "challenge_selected") {
+        const title = CHALLENGES.find((c) => c.id === latest.challenge_id)?.title ?? "";
+        setConfirmedId(latest.challenge_id);
+        setConfirmedTitle(title);
+        localStorage.setItem(CHALLENGE_KEY, latest.challenge_id);
+        if (latest.selected_at && !localStorage.getItem(TIMER_KEY)) {
+          localStorage.setItem(TIMER_KEY, String(new Date(latest.selected_at).getTime()));
+        }
+        setTimerRunning(true);
+      }
     }).catch(() => {});
   }, [accessToken, isInterviewee]);
 
@@ -126,18 +143,31 @@ export default function InterviewPlatform() {
     setModalOpen(true);
   }
 
-  function confirmSelect() {
-    setModalOpen(false);
-    setConfirmedId(pendingId);
-    setConfirmedTitle(pendingTitle);
-    localStorage.setItem(CHALLENGE_KEY, pendingId); // 持久化选题
-    if (!localStorage.getItem(TIMER_KEY)) {
-      localStorage.setItem(TIMER_KEY, String(Date.now()));
-      setTimerRunning(true);
+  async function confirmSelect() {
+    if (!accessToken || !isInterviewee) {
+      navigate("/login");
+      return;
     }
-    setTimeout(() => {
-      document.getElementById("submitSection")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
+    setSelecting(true);
+    try {
+      const res = await submissionsApi.select(pendingId);
+      setModalOpen(false);
+      setConfirmedId(res.data.challenge_id);
+      setConfirmedTitle(CHALLENGES.find((c) => c.id === res.data.challenge_id)?.title ?? pendingTitle);
+      localStorage.setItem(CHALLENGE_KEY, res.data.challenge_id);
+      const selectedAt = res.data.selected_at ? new Date(res.data.selected_at).getTime() : Date.now();
+      if (!localStorage.getItem(TIMER_KEY)) {
+        localStorage.setItem(TIMER_KEY, String(selectedAt));
+        setTimerRunning(true);
+      }
+      setTimeout(() => {
+        document.getElementById("submitSection")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+    } catch (err: any) {
+      alert(err?.response?.data?.detail ?? "选题失败，请重试");
+    } finally {
+      setSelecting(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -156,6 +186,10 @@ export default function InterviewPlatform() {
       fd.append("challenge_id", confirmedId);
       fd.append("github_url", github);
       if (note) fd.append("notes", note);
+      const timerStart = localStorage.getItem(TIMER_KEY);
+      if (timerStart) {
+        fd.append("time_spent_seconds", String(Math.max(0, Math.round((Date.now() - Number(timerStart)) / 1000))));
+      }
       if (user?.display_name || user?.username) fd.append("name", user.display_name || user.username || "");
       if (user?.email) fd.append("email", user.email);
       if (resumeFile) fd.append("resume", resumeFile);
@@ -402,7 +436,11 @@ export default function InterviewPlatform() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => { setConfirmedId(""); setConfirmedTitle(""); }}
+                  onClick={() => {
+                    setConfirmedId("");
+                    setConfirmedTitle("");
+                    localStorage.removeItem(CHALLENGE_KEY);
+                  }}
                   style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-sub)", cursor: "pointer", fontSize: 12 }}
                 >
                   重选
@@ -477,7 +515,9 @@ export default function InterviewPlatform() {
             </div>
             <div className="iv-modal-actions">
               <button className="iv-modal-cancel" onClick={() => setModalOpen(false)}>再看看</button>
-              <button className="iv-modal-confirm" onClick={confirmSelect}>确认，开始计时</button>
+              <button className="iv-modal-confirm" onClick={confirmSelect} disabled={selecting}>
+                {selecting ? "记录中…" : "确认，开始计时"}
+              </button>
             </div>
           </div>
         </div>
